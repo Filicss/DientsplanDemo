@@ -2077,9 +2077,10 @@ function runSchedulingEngine(employeeStats, engine) {
     if (surplusHours > 0) {
       applySoftTargetReduction(employeeStats, surplusHours);
     }
-    runMiddlePhase(employeeStats, engine);
   }
 
+  runMiddlePhase(employeeStats, engine);
+  runGlobalRepairPhase(employeeStats, engine);
   normalizeAllDays(employeeStats, engine);
 }
 
@@ -2087,8 +2088,10 @@ function createSchedulingEngineContext(planningDays) {
   const roleMap = getRequiredShiftRoleMap();
   const orderedDays = sortPlanningDaysByPriority(planningDays, roleMap);
   return {
+    planningDays: [...planningDays],
     orderedDays,
     roleMap,
+    roleDiagnostics: buildWeeklyRoleDiagnostics(planningDays, roleMap),
     dayPriority: Object.fromEntries(
       orderedDays.map((dayKey, index) => [dayKey, index]),
     ),
@@ -2177,6 +2180,70 @@ function compareDayFallbackPriority(leftDayKey, rightDayKey) {
   return priority.indexOf(leftDayKey) - priority.indexOf(rightDayKey);
 }
 
+// 周级供需诊断：先判断每个固定角色是否存在结构性缺口，
+// 后续评分再决定偏好应保护到什么程度。
+function buildWeeklyRoleDiagnostics(planningDays, roleMap) {
+  const diagnostics = {};
+
+  for (const role of ["early", "middle", "late"]) {
+    const shift = roleMap[role];
+    if (!shift) {
+      diagnostics[role] = {
+        role,
+        shiftId: "",
+        weeklyDemandHours: 0,
+        preferredSupplyHours: 0,
+        flexibleSupplyHours: 0,
+        shortageHours: 0,
+        shortageRatio: 0,
+      };
+      continue;
+    }
+
+    const weeklyDemandHours = roundToHalfHour(
+      planningDays.reduce((sum, dayKey) => {
+        return sum + getDemandValue(dayKey, shift.id) * getShiftFullHours(shift.id);
+      }, 0),
+    );
+    const preferredSupplyHours = roundToHalfHour(
+      state.employees
+        .filter((employee) => employee.preferredShiftId === shift.id)
+        .reduce((sum, employee) => sum + employee.remainingHours, 0),
+    );
+    const flexibleSupplyHours = roundToHalfHour(
+      state.employees
+        .filter((employee) => employee.preferredShiftId !== shift.id)
+        .reduce((sum, employee) => sum + employee.remainingHours, 0),
+    );
+    const shortageHours = Math.max(
+      0,
+      roundToHalfHour(weeklyDemandHours - preferredSupplyHours),
+    );
+    const shortageRatio =
+      weeklyDemandHours === 0 ? 0 : shortageHours / weeklyDemandHours;
+
+    diagnostics[role] = {
+      role,
+      shiftId: shift.id,
+      weeklyDemandHours,
+      preferredSupplyHours,
+      flexibleSupplyHours,
+      shortageHours,
+      shortageRatio,
+    };
+  }
+
+  return diagnostics;
+}
+
+function getRoleShortageRatio(role, engine) {
+  return engine.roleDiagnostics?.[role]?.shortageRatio || 0;
+}
+
+function getRoleShortageHours(role, engine) {
+  return engine.roleDiagnostics?.[role]?.shortageHours || 0;
+}
+
 function runCriticalFullPhase(employeeStats, engine, options = {}) {
   for (const dayKey of engine.orderedDays) {
     const queue = buildAlternatingCriticalRoleQueue(dayKey, engine);
@@ -2221,6 +2288,30 @@ function runMiddlePhase(employeeStats, engine) {
       assignTask(employeeStats, candidate.employee.id, dayKey, task.assignmentId, "auto");
     }
   }
+}
+
+function runExactFitCoreCloseoutPhase(employeeStats, engine, options = {}) {
+  for (const dayKey of engine.orderedDays) {
+    for (const role of ["early", "late", "middle"]) {
+      while (getRoleGapCount(dayKey, role, engine) > 0) {
+        const task = createRoleTask(dayKey, role, "core", "core-closeout", engine);
+        if (!task) break;
+
+        const candidate = selectBestCandidate(employeeStats, task, engine, options);
+        if (!candidate) break;
+
+        assignTask(employeeStats, candidate.employee.id, dayKey, task.assignmentId, "auto");
+      }
+    }
+  }
+}
+
+function runGlobalRepairPhase(employeeStats, engine) {
+  runExactFitCoreCloseoutPhase(employeeStats, engine, { allowOvertime: false });
+  repairCriticalCoverage(employeeStats, engine, {
+    allowCoreFallback: true,
+    allowOvertime: true,
+  });
 }
 
 function buildAlternatingCriticalRoleQueue(dayKey, engine) {
@@ -2308,15 +2399,25 @@ function canTakeTask(entry, task, engine, options = {}) {
   if (!isEmployeeAvailable(entry.employee.id, task.dayKey)) return false;
   if (hasAssignment(entry.employee.id, task.dayKey)) return false;
 
-  if (task.stage === "critical-core" && entry.employee.weeklyHours !== 20) {
-    return false;
-  }
-
   const nextHours = roundToHalfHour(entry.assignedHours + task.hours);
+  const remainingBudget = roundToHalfHour(entry.employee.remainingHours - entry.assignedHours);
 
   if (task.stage === "middle") {
     const middleCap = Math.max(entry.employee.remainingHours, entry.assignedHours);
     return nextHours <= roundToHalfHour(middleCap);
+  }
+
+  if (task.stage === "critical-core" || task.stage === "core-closeout") {
+    if (!canShiftUseCore(task.shiftId)) return false;
+
+    if (task.stage === "core-closeout") {
+      if (remainingBudget <= 0) return false;
+      return nextHours <= roundToHalfHour(entry.hardCap);
+    }
+
+    if (remainingBudget < task.hours - 1 && !options.allowOvertime) {
+      return false;
+    }
   }
 
   if (options.allowOvertime) {
@@ -2335,7 +2436,7 @@ function getTaskScore(entry, task, engine) {
   if (task.stage === "middle") {
     return scoreMiddleTask(entry.employee, entry, task, engine);
   }
-  if (task.stage === "critical-core") {
+  if (task.stage === "critical-core" || task.stage === "core-closeout") {
     return scoreCoreFallbackTask(entry.employee, entry, task, engine);
   }
   return scoreCriticalFullTask(entry.employee, entry, task, engine);
@@ -2346,14 +2447,16 @@ function scoreCriticalFullTask(employee, entry, task, engine) {
   const nextHours = roundToHalfHour(entry.assignedHours + task.hours);
   const softRemaining = roundToHalfHour(entry.softTarget - entry.assignedHours);
   const overtimeHours = Math.max(0, nextHours - employee.remainingHours);
+  const planningPressure = getPlanningPressure(entry, engine);
+  const shortageRatio = getRoleShortageRatio(task.role, engine);
   let score = 0;
 
   if (preferredShiftId === task.shiftId) {
-    score += 260 + employee.planningPriority * 25;
+    score += 170 + employee.planningPriority * 20 + shortageRatio * 90;
   } else if (!preferredShiftId) {
-    score += 160;
+    score += 135 + shortageRatio * 120;
   } else {
-    score += 35;
+    score += 25 + shortageRatio * 170;
   }
 
   if (employee.weeklyHours > 20) {
@@ -2373,6 +2476,7 @@ function scoreCriticalFullTask(employee, entry, task, engine) {
     score += 70;
   }
 
+  score += planningPressure * 34;
   score += Math.max(0, employee.remainingHours - entry.assignedHours) * 1.5;
 
   score += getDaySpacingBonus(employee.id, task.dayKey) * 8;
@@ -2385,14 +2489,16 @@ function scoreCriticalFullTask(employee, entry, task, engine) {
 function scoreMiddleTask(employee, entry, task, engine) {
   const preferredShiftId = employee.preferredShiftId;
   const softRemaining = roundToHalfHour(entry.softTarget - entry.assignedHours);
+  const planningPressure = getPlanningPressure(entry, engine);
+  const middleShortageRatio = getRoleShortageRatio("middle", engine);
   let score = 0;
 
   if (preferredShiftId === task.shiftId) {
-    score += 260 + employee.planningPriority * 25;
+    score += 220 + employee.planningPriority * 22 + middleShortageRatio * 60;
   } else if (!preferredShiftId) {
-    score += 110;
+    score += 95 + middleShortageRatio * 40;
   } else {
-    score += 20;
+    score += 30 + middleShortageRatio * 20;
   }
 
   if (getDayCriticalGapCount(task.dayKey, engine) > 0) {
@@ -2405,6 +2511,7 @@ function scoreMiddleTask(employee, entry, task, engine) {
     score -= Math.abs(softRemaining - task.hours) * 8;
   }
 
+  score += planningPressure * 18;
   score += getDaySpacingBonus(employee.id, task.dayKey) * 6;
   score += Math.random() * 2;
   return score;
@@ -2417,18 +2524,18 @@ function scoreCoreFallbackTask(employee, entry, task, engine) {
     0,
     roundToHalfHour(entry.assignedHours + task.hours - employee.remainingHours),
   );
+  const remainingBudget = roundToHalfHour(employee.remainingHours - entry.assignedHours);
+  const planningPressure = getPlanningPressure(entry, engine);
+  const shortageRatio = getRoleShortageRatio(task.role, engine);
+  const exactFitPenalty = Math.abs(remainingBudget - task.hours);
   let score = 0;
 
-  if (employee.weeklyHours !== 20) {
-    return Number.NEGATIVE_INFINITY;
-  }
-
   if (preferredShiftId === task.shiftId) {
-    score += 280 + employee.planningPriority * 25;
+    score += 185 + employee.planningPriority * 20 + shortageRatio * 90;
   } else if (!preferredShiftId) {
-    score += 120;
+    score += 120 + shortageRatio * 110;
   } else {
-    score += 45;
+    score += 45 + shortageRatio * 140;
   }
 
   if (softRemaining >= task.hours) {
@@ -2444,6 +2551,13 @@ function scoreCoreFallbackTask(employee, entry, task, engine) {
     score += 60;
   }
 
+  if (task.stage === "core-closeout") {
+    score += Math.max(0, 120 - exactFitPenalty * 20);
+  } else {
+    score += Math.max(0, 70 - exactFitPenalty * 10);
+  }
+
+  score += planningPressure * 26;
   score += Math.max(0, employee.remainingHours - entry.assignedHours) * 1.5;
 
   score += getDaySpacingBonus(employee.id, task.dayKey) * 8;
@@ -2554,8 +2668,6 @@ function tryReassignWithinDayV2(dayKey, targetTask, employeeStats, engine) {
 
 function repackTwentyHourCriticalAssignments(employeeStats, engine) {
   for (const entry of employeeStats) {
-    if (entry.employee.weeklyHours !== 20) continue;
-
     for (const dayKey of engine.orderedDays) {
       const cell = getScheduleCell(entry.employee.id, dayKey);
       if (cell.locked) continue;
@@ -2569,6 +2681,12 @@ function repackTwentyHourCriticalAssignments(employeeStats, engine) {
       const fullHours = getShiftFullHours(shiftId);
       const coreHours = getShiftCoreHours(shiftId);
       if (coreHours >= fullHours) continue;
+      const remainingNeed = roundToHalfHour(entry.employee.remainingHours - entry.assignedHours);
+      const canBenefitFromCore =
+        entry.employee.weeklyHours === 20 ||
+        (remainingNeed < 0 && Math.abs(remainingNeed) >= fullHours - coreHours) ||
+        (remainingNeed >= 0 && remainingNeed < fullHours);
+      if (!canBenefitFromCore) continue;
 
       cell.assignmentId = `${shiftId}::core`;
       cell.variant = "core";
@@ -2844,6 +2962,9 @@ function isReservedForMiddleShift(employeeStats, entry, dayKey, engine) {
 
   const remainingMiddleDemand = getGapCount(dayKey, middleShift.id);
   if (remainingMiddleDemand <= 0) return false;
+  if (getRoleShortageRatio("late", engine) >= 0.2) return false;
+  if (getRoleShortageRatio("early", engine) >= 0.2) return false;
+  if (getRoleShortageHours("middle", engine) === 0) return false;
 
   const middleTask = createRoleTask(dayKey, "middle", "full", "middle", engine);
   if (!middleTask || !canTakeTask(entry, middleTask, engine)) return false;
@@ -2862,6 +2983,9 @@ function isReservedForMiddleShift(employeeStats, entry, dayKey, engine) {
 }
 
 function compareMiddleReservationCandidates(left, right) {
+  const pressureDiff = getPlanningPressure(right) - getPlanningPressure(left);
+  if (pressureDiff !== 0) return pressureDiff;
+
   const priorityDiff = right.employee.planningPriority - left.employee.planningPriority;
   if (priorityDiff !== 0) return priorityDiff;
 
@@ -2945,6 +3069,28 @@ function applySoftTargetReduction(employeeStats, surplusHours) {
       remaining = roundToHalfHour(remaining - removable);
     }
   }
+}
+
+function getRemainingAvailableDays(entry, engine) {
+  const dayKeys = engine?.planningDays || getPlanningDays();
+  let count = 0;
+
+  for (const dayKey of dayKeys) {
+    if (!isEmployeeAvailable(entry.employee.id, dayKey)) continue;
+    if (hasAssignment(entry.employee.id, dayKey)) continue;
+    count += 1;
+  }
+
+  return count;
+}
+
+function getPlanningPressure(entry, engine) {
+  const remainingHours = Math.max(
+    0,
+    roundToHalfHour(entry.employee.remainingHours - entry.assignedHours),
+  );
+  const remainingDays = Math.max(1, getRemainingAvailableDays(entry, engine));
+  return remainingHours / remainingDays;
 }
 
 function getShiftFullHours(shiftId) {

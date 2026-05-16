@@ -1,5 +1,8 @@
 # Code Structure and Scheduling Logic
 
+Current note:
+For the logic that matches the current working implementation, see [current-scheduling-logic.md](C:\Users\filic\Documents\New project 5\docs\current-scheduling-logic.md).
+
 ## Deutsch
 
 ### 1. Was sich inzwischen grundlegend geaendert hat
