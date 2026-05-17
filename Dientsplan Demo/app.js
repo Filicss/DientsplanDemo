@@ -393,7 +393,6 @@ function renderDemandTable() {
 function renderEmployeeTable() {
   refs.employeeTableBody.innerHTML = state.employees
     .map((employee) => {
-      const remaining = getEmployeeRemainingFromSchedule(employee.id);
       return `
         <tr>
           <td><input type="text" value="${escapeAttr(employee.name)}" data-employee-id="${employee.id}" data-field="name" /></td>
@@ -435,7 +434,6 @@ function renderEmployeeTable() {
                 .join("")}
             </select>
           </td>
-          <td class="metric-cell">${formatHours(remaining)} h</td>
           <td><button type="button" class="remove-button" data-remove-employee="${employee.id}">x</button></td>
         </tr>
       `;
