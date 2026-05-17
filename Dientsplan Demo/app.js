@@ -70,9 +70,9 @@ function bindActions() {
   refs.exportButton.addEventListener("click", exportJson);
   refs.importButton.addEventListener("click", () => refs.importFileInput.click());
   refs.importFileInput.addEventListener("change", importJson);
-  refs.addShiftButton.addEventListener("click", addShift);
+  refs.addShiftButton?.addEventListener("click", addShift);
   refs.addEmployeeButton.addEventListener("click", addEmployee);
-  refs.syncDemandButton.addEventListener("click", syncDemandToDefault);
+  refs.syncDemandButton?.addEventListener("click", syncDemandToDefault);
 }
 
 function createSampleData() {
@@ -331,7 +331,7 @@ function renderShiftTable() {
 
       return `
         <tr>
-          <td><input type="text" value="${escapeAttr(shift.name)}" data-shift-id="${shift.id}" data-field="name" /></td>
+          <td>${escapeHtml(shift.name)}</td>
           <td><input type="time" value="${shift.start}" data-shift-id="${shift.id}" data-field="start" /></td>
           <td><input type="time" value="${shift.end}" data-shift-id="${shift.id}" data-field="end" /></td>
           <td><input type="time" value="${shift.coreStart}" data-shift-id="${shift.id}" data-field="coreStart" /></td>
