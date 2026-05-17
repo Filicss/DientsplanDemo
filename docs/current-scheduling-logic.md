@@ -13,6 +13,7 @@ The current engine tries to balance these business goals:
 - reduce over-protection of `Mittelschicht` preference when other roles are structurally short
 - use `Kernzeit` as a targeted exact-fit and repair tool
 - keep manual locks compatible with automatic replanning
+- allow small manager-driven supplement shifts without rerunning the engine
 
 ## 2. Main entry points
 
@@ -29,6 +30,13 @@ Manual rebalancing still goes through:
 - `rebalanceAfterManualChange()`
 
 That means auto-planning and post-manual replanning use the same core engine.
+
+There is now also a separate no-rebalance path for the dedicated manual add panel:
+
+- `onManualAddSubmit()`
+- `refreshDerivedScheduleState()`
+
+That path updates the current schedule state, coverage, summary, and status messages without calling `generateSchedule()`.
 
 ## 3. Weekly role diagnosis
 
@@ -185,6 +193,10 @@ Current rules include:
 - regular-hours-first behavior when possible
 - `core` tasks are allowed more broadly than before
 - `core-closeout` is used for small remaining-hour situations
+
+For the separate manual add panel, there is one extra UI-level business rule:
+
+- manual supplement shifts may only be written into cells that are currently `frei`
 
 ## 11. Scoring logic
 

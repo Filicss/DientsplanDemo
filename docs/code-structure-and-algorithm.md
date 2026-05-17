@@ -17,7 +17,8 @@ Die aktuelle Version in [app.js](C:\Users\filic\Documents\New project 5\app.js) 
 - `Frühschicht` und `Spätschicht` sind kritische Schichten
 - `Mittelschicht` wird nachrangig behandelt
 - `Kernzeit` ist nur ein Fallback fuer exakt `20h` Mitarbeitende
-- manuelle Aenderungen werden ueber dieselbe Engine neu ausbalanciert
+- direkte Raster-Aenderungen werden ueber dieselbe Engine neu ausbalanciert
+- zusaetzliche Manager-Ergaenzungen koennen auch ohne Neuplanung gesetzt werden
 
 ### 2. Weiterhin gueltige Grundarchitektur
 Die Gesamtarchitektur ist unveraendert:
@@ -27,6 +28,7 @@ Die Gesamtarchitektur ist unveraendert:
 - `on...` Funktionen verarbeiten Benutzereingaben
 - `generateSchedule()` ist der Einstiegspunkt fuer automatische Planung
 - `rebalanceAfterManualChange()` loest eine Neuplanung nach manuellen Aenderungen aus
+- `refreshDerivedScheduleState()` aktualisiert Summary, Coverage und Hinweise ohne Neuplanung
 
 Das Programm bleibt also eine zustandsgetriebene statische Frontend-Anwendung.
 
@@ -285,9 +287,13 @@ Die alte spezielle Nachplanungsfunktion wurde jetzt vereinfacht:
 Das bedeutet:
 - manuelle Sperren bleiben erhalten
 - dieselbe V2-Engine wird erneut angewendet
-- automatische und manuelle Planung nutzen dieselbe Logikbasis
+- direkte Raster-Aenderungen und automatische Planung nutzen dieselbe Logikbasis
 
-Das ist fachlich sauberer als zwei unterschiedliche Planungswege.
+Zusaetzlich gibt es jetzt ein separates manuelles Ergaenzungspanel:
+- es schreibt nur auf aktuell `freie` Zellen
+- es setzt `locked = true` und `source = "manual"`
+- es verwendet danach `refreshDerivedScheduleState()`
+- es loest bewusst keine Neuplanung des restlichen Wochenplans aus
 
 ### 19. Wichtige Stellen fuer ein Interview
 

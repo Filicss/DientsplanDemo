@@ -7,7 +7,7 @@ const DAYS = [
   { key: "saturday", label: "Samstag" },
 ];
 
-const MODE_DAY = "day";
+const LEGACY_MODE_DAY = "day";
 const MODE_WEEK = "week";
 const ASSIGNMENT_FREE = "frei";
 const ASSIGNMENT_CLOSED = "geschlossen";
@@ -268,70 +268,31 @@ function renderAll() {
 }
 
 function renderModeControls() {
-  const rows = [
-    {
-      key: MODE_DAY,
-      label: "Tagesplanung",
-      active: state.mode === MODE_DAY,
-      dayMode: true,
-    },
-    {
-      key: MODE_WEEK,
-      label: "Wochenplanung",
-      active: state.mode === MODE_WEEK,
-      dayMode: false,
-    },
-  ];
-
-  refs.modeControls.innerHTML = rows
-    .map(
-      (row) => `
-        <div class="mode-row">
+  refs.modeControls.innerHTML = `
+    <div class="mode-row">
+      <div class="mode-selector is-active" aria-hidden="true">
+        <span class="selector-dot"></span>
+        <span>Wochenplanung</span>
+      </div>
+      <div class="day-chip-row">
+        ${DAYS.map((day) => `
           <button
             type="button"
-            class="mode-selector ${row.active ? "is-active" : ""}"
-            data-mode="${row.key}"
+            class="day-chip ${state.activeDays[day.key] ? "is-active" : "is-closed"}"
+            data-day="${day.key}"
           >
-            <span class="selector-dot"></span>
-            <span>${row.label}</span>
+            ${day.label}
           </button>
-          <div class="day-chip-row">
-            ${DAYS.map((day) => {
-              const active = row.dayMode
-                ? state.selectedDay === day.key
-                : state.activeDays[day.key];
-              return `
-                <button
-                  type="button"
-                  class="day-chip ${active ? "is-active" : ""}"
-                  data-mode="${row.key}"
-                  data-day="${day.key}"
-                >
-                  ${day.label}
-                </button>
-              `;
-            }).join("")}
-          </div>
-        </div>
-      `,
-    )
-    .join("");
+        `).join("")}
+      </div>
+    </div>
+  `;
 
-  refs.modeControls.querySelectorAll("[data-mode]").forEach((element) => {
+  refs.modeControls.querySelectorAll("[data-day]").forEach((element) => {
     element.addEventListener("click", () => {
-      const mode = element.dataset.mode;
       const day = element.dataset.day;
-      if (day) {
-        if (mode === MODE_DAY) {
-          state.mode = MODE_DAY;
-          state.selectedDay = day;
-        } else {
-          state.mode = MODE_WEEK;
-          state.activeDays[day] = !state.activeDays[day];
-        }
-      } else {
-        state.mode = mode;
-      }
+      state.mode = MODE_WEEK;
+      state.activeDays[day] = !state.activeDays[day];
       renderModeControls();
       renderDemandTable();
       renderScheduleTable();
@@ -379,10 +340,7 @@ function renderDemandTable() {
           <td>${shift.name}</td>
           ${DAYS.map((day) => {
             const value = getDemandValue(day.key, shift.id);
-            const disabled =
-              state.mode === MODE_DAY
-                ? day.key !== state.selectedDay
-                : !state.activeDays[day.key];
+            const disabled = !state.activeDays[day.key];
             return `
               <td>
                 <input
@@ -470,6 +428,7 @@ function renderEmployeeTable() {
     });
 }
 
+//??????
 function renderScheduleTable() {
   const activeDays = getPlanningDays();
   refs.scheduleTableHead.innerHTML = `
@@ -504,7 +463,9 @@ function renderScheduleTable() {
   });
 }
 
+//?????????????
 function renderScheduleCell(employee, dayKey, activeDays) {
+  // ????ID????????????
   const cell = getScheduleCell(employee.id, dayKey);
   const options = buildAssignmentOptionsForDay(dayKey);
   const inactive = !activeDays.includes(dayKey);
@@ -942,7 +903,7 @@ function loadSampleData() {
 
 function exportJson() {
   const payload = {
-    mode: state.mode,
+    mode: MODE_WEEK,
     selectedDay: state.selectedDay,
     activeDays: state.activeDays,
     shifts: state.shifts,
@@ -989,7 +950,7 @@ function importJson(event) {
 }
 
 function hydrateState(payload) {
-  state.mode = payload.mode === MODE_DAY ? MODE_DAY : MODE_WEEK;
+  state.mode = MODE_WEEK;
   state.selectedDay = DAYS.some((day) => day.key === payload.selectedDay)
     ? payload.selectedDay
     : "monday";
@@ -997,6 +958,16 @@ function hydrateState(payload) {
     acc[day.key] = Boolean(payload.activeDays?.[day.key]);
     return acc;
   }, {});
+  if (!Object.values(state.activeDays).some(Boolean)) {
+    if (payload.mode === LEGACY_MODE_DAY && DAYS.some((day) => day.key === state.selectedDay)) {
+      // 中文注释：兼容旧版“日模式”导入，把它映射成只启用单天的周计划。
+      state.activeDays[state.selectedDay] = true;
+    } else {
+      for (const day of DAYS) {
+        state.activeDays[day.key] = true;
+      }
+    }
+  }
   state.shifts = (payload.shifts || []).map((shift) => createShift(shift));
   state.employees = (payload.employees || []).map((employee) =>
     createEmployee(employee),
@@ -1020,72 +991,6 @@ function resetManualLocks() {
   generateSchedule({ preserveManualLocks: false });
 }
 
-function generateSchedule(options = {}) {
-  const { preserveManualLocks = true } = options;
-  ensureDemandShape();
-  state.generationRevision += 1;
-
-  const planningDays = getPlanningDays();
-  const staticMessages = validateStaticConfig();
-
-  if (planningDays.length === 0) {
-    state.statusMessages = [
-      ...staticMessages,
-      {
-        level: "warn",
-        text: "Es ist kein Planungstag aktiv. Bitte mindestens einen Tag wählen.",
-      },
-    ];
-    state.summary = buildEmptySummary();
-    state.coverage = buildCoverageMap([]);
-    renderAll();
-    return;
-  }
-
-  const seedSchedule = preserveManualLocks ? cloneSchedule(state.schedule) : {};
-  state.schedule = initializeSchedule(seedSchedule, preserveManualLocks);
-
-  const employeeStats = createEmployeeStats();
-  const tasks = buildPlanningTasks(planningDays);
-  const requiredHours = tasks.reduce((sum, task) => sum + task.hours, 0);
-  const baseHours = state.employees.reduce((sum, employee) => sum + employee.remainingHours, 0);
-
-  if (requiredHours > baseHours) {
-    allocateOvertimeCapacity(employeeStats, requiredHours - baseHours);
-  } else if (requiredHours < baseHours) {
-    markUnderTargetScenario(employeeStats, baseHours - requiredHours);
-  }
-
-  const unscheduled = [];
-
-  for (const task of tasks) {
-    const lockedOwnerId = findLockedOwnerForTask(task.dayKey, task.assignmentId);
-    if (lockedOwnerId) {
-      assignTask(employeeStats, lockedOwnerId, task.dayKey, task.assignmentId, "locked");
-      continue;
-    }
-
-    const candidate = pickBestEmployeeForTask(employeeStats, task);
-    if (candidate) {
-      assignTask(employeeStats, candidate.employee.id, task.dayKey, task.assignmentId, "auto");
-      continue;
-    }
-
-    unscheduled.push(task);
-  }
-
-  if (unscheduled.length > 0) {
-    fillCoverageGaps(employeeStats, unscheduled);
-  }
-
-  if (preserveManualLocks) {
-    repairLockedCells(employeeStats, planningDays);
-  }
-
-  updateSummaryAndMessages(employeeStats, tasks, staticMessages, planningDays);
-  renderAll();
-}
-
 function initializeSchedule(seedSchedule, preserveManualLocks) {
   const nextSchedule = {};
   for (const employee of state.employees) {
@@ -1105,130 +1010,6 @@ function initializeSchedule(seedSchedule, preserveManualLocks) {
     }
   }
   return nextSchedule;
-}
-
-function createEmployeeStats() {
-  return state.employees.map((employee) => ({
-    employee,
-    assignedHours: getLockedAssignedHours(employee.id),
-    allowedHours: employee.remainingHours,
-    overtimeCapacity: 0,
-  }));
-}
-
-function allocateOvertimeCapacity(employeeStats, missingHours) {
-  let remaining = roundToHalfHour(missingHours);
-  for (const priority of [3, 2, 1]) {
-    const group = employeeStats
-      .filter((entry) => entry.employee.overtimePriority === priority)
-      .sort((left, right) => left.employee.name.localeCompare(right.employee.name));
-
-    for (const entry of group) {
-      if (remaining <= 0) break;
-      const capacity = Math.min(remaining, 8);
-      entry.overtimeCapacity += capacity;
-      remaining = roundToHalfHour(remaining - capacity);
-    }
-  }
-}
-
-function markUnderTargetScenario(employeeStats, surplusHours) {
-  let remaining = roundToHalfHour(surplusHours);
-  for (const priority of [0, 1, 2, 3]) {
-    const group = employeeStats.filter(
-      (entry) => entry.employee.overtimePriority === priority,
-    );
-    for (const entry of group) {
-      if (remaining <= 0) break;
-      const removable = Math.min(remaining, entry.allowedHours);
-      entry.allowedHours = roundToHalfHour(entry.allowedHours - removable);
-      remaining = roundToHalfHour(remaining - removable);
-    }
-  }
-}
-
-function buildPlanningTasks(planningDays) {
-  const tasks = [];
-
-  for (const dayKey of planningDays) {
-    for (const shift of state.shifts) {
-      const required = getDemandValue(dayKey, shift.id);
-      for (let index = 0; index < required; index += 1) {
-        const assignmentId = shouldUseCoreVariant(shift)
-          ? `${shift.id}::core`
-          : `${shift.id}::full`;
-
-        tasks.push({
-          dayKey,
-          shiftId: shift.id,
-          assignmentId,
-          variant: resolveVariantFromAssignmentId(assignmentId),
-          hours: getHoursForAssignmentId(assignmentId),
-        });
-      }
-    }
-  }
-
-  tasks.sort((left, right) => {
-    const dayDiff = DAYS.findIndex((day) => day.key === left.dayKey) -
-      DAYS.findIndex((day) => day.key === right.dayKey);
-    if (dayDiff !== 0) return dayDiff;
-    return right.hours - left.hours;
-  });
-
-  return tasks;
-}
-
-function shouldUseCoreVariant(shift) {
-  const fullHours = netHoursBetween(shift.start, shift.end);
-  const coreHours = netHoursBetween(shift.coreStart, shift.coreEnd);
-  return coreHours > 0 && coreHours < fullHours;
-}
-
-function pickBestEmployeeForTask(employeeStats, task) {
-  const candidates = employeeStats
-    .filter((entry) => isEmployeeAvailable(entry.employee.id, task.dayKey))
-    .filter((entry) => !hasAssignment(entry.employee.id, task.dayKey))
-    .filter((entry) => canEmployeeTakeTask(entry, task))
-    .filter((entry) => !isReservedForPreferredShift(employeeStats, entry, task))
-    .map((entry) => ({
-      entry,
-      score: scoreEmployeeForTask(entry.employee, entry, task),
-    }))
-    .sort((left, right) => right.score - left.score);
-
-  if (candidates.length === 0) return null;
-
-  const topScore = candidates[0].score;
-  const topCandidates = candidates.filter((candidate) => candidate.score === topScore);
-  return randomChoice(topCandidates).entry;
-}
-
-function canEmployeeTakeTask(entry, task) {
-  const nextHours = roundToHalfHour(entry.assignedHours + task.hours);
-  return nextHours <= roundToHalfHour(entry.allowedHours + entry.overtimeCapacity);
-}
-
-function scoreEmployeeForTask(employee, entry, task) {
-  const shiftId = getShiftIdFromAssignmentId(task.assignmentId);
-  let score = 0;
-
-  if (employee.preferredShiftId === shiftId) {
-    score += 200 + employee.planningPriority * 20;
-  } else if (!employee.preferredShiftId) {
-    score += 120;
-  } else {
-    score += 40;
-  }
-
-  const remaining = roundToHalfHour(entry.allowedHours + entry.overtimeCapacity - entry.assignedHours);
-  score += Math.max(0, 40 - Math.abs(remaining - task.hours) * 4);
-  score += employee.overtimePriority * 6;
-  score += getDaySpacingBonus(employee.id, task.dayKey) * 8;
-  score += task.variant === "core" && employee.weeklyHours <= 20 ? 22 : 0;
-  score += Math.random() * 5;
-
-  return score;
 }
 
 function assignTask(employeeStats, employeeId, dayKey, assignmentId, source) {
@@ -1251,370 +1032,9 @@ function assignTask(employeeStats, employeeId, dayKey, assignmentId, source) {
   stat.assignedHours = roundToHalfHour(stat.assignedHours + hours);
 }
 
-function fillCoverageGaps(employeeStats, tasks) {
-  for (const task of tasks) {
-    const candidates = employeeStats
-      .filter((entry) => isEmployeeAvailable(entry.employee.id, task.dayKey))
-      .filter((entry) => !hasAssignment(entry.employee.id, task.dayKey))
-      .filter((entry) => canEmployeeTakeTask(entry, task))
-      .filter((entry) => !isReservedForPreferredShift(employeeStats, entry, task))
-      .map((entry) => ({
-        entry,
-        score: fallbackScore(entry.employee, entry, task),
-      }))
-      .sort((left, right) => right.score - left.score);
-
-    if (candidates[0]) {
-      assignTask(employeeStats, candidates[0].entry.employee.id, task.dayKey, task.assignmentId, "auto");
-    }
-  }
-}
-
-function fallbackScore(employee, entry, task) {
-  let score = 20;
-  if (employee.preferredShiftId === getShiftIdFromAssignmentId(task.assignmentId)) {
-    score += 80;
-  } else if (!employee.preferredShiftId) {
-    score += 55;
-  }
-  score += employee.planningPriority * 10;
-  score -= Math.max(0, entry.assignedHours - entry.allowedHours) * 5;
-  score += Math.random() * 4;
-  return score;
-}
-
-function repairLockedCells(employeeStats, planningDays) {
-  for (const employee of state.employees) {
-    for (const dayKey of planningDays) {
-      const cell = getScheduleCell(employee.id, dayKey);
-      if (!cell.locked || cell.assignmentId === ASSIGNMENT_FREE) continue;
-      repairCoverageForDay(dayKey, employeeStats);
-    }
-  }
-}
-
-function rebalanceAfterManualChange(employeeId, dayKey) {
-  const planningDays = getPlanningDays();
-  const employeeStats = createEmployeeStats();
-
-  for (const employee of state.employees) {
-    for (const day of planningDays) {
-      const cell = getScheduleCell(employee.id, day);
-      if (!cell.locked) {
-        cell.assignmentId = ASSIGNMENT_FREE;
-        cell.variant = "free";
-        cell.source = "auto";
-      }
-    }
-  }
-
-  const tasks = buildPlanningTasks(planningDays);
-
-  for (const task of tasks) {
-    const lockedOwnerId = findLockedOwnerForTask(task.dayKey, task.assignmentId);
-    if (lockedOwnerId) {
-      assignTask(employeeStats, lockedOwnerId, task.dayKey, task.assignmentId, "locked");
-    }
-  }
-
-  for (const day of planningDays) {
-    repairCoverageForDay(day, employeeStats);
-  }
-
-  updateSummaryAndMessages(employeeStats, tasks, validateStaticConfig(), planningDays);
-  renderAll();
-}
-
-function repairCoverageForDay(dayKey, employeeStats) {
-  // 中文注释：这里按“真实缺口数”生成待补位任务，避免一次手动修改触发过量补位。
-  const missingTasks = [];
-
-  for (const shift of state.shifts) {
-    const required = getDemandValue(dayKey, shift.id);
-    const assigned = countAssignments(dayKey, shift.id);
-    const gap = Math.max(0, required - assigned);
-    const assignmentId = shouldUseCoreVariant(shift)
-      ? `${shift.id}::core`
-      : `${shift.id}::full`;
-    const hours = getHoursForAssignmentId(assignmentId);
-
-    for (let index = 0; index < gap; index += 1) {
-      missingTasks.push({
-        dayKey,
-        shiftId: shift.id,
-        assignmentId,
-        variant: resolveVariantFromAssignmentId(assignmentId),
-        hours,
-      });
-    }
-  }
-
-  for (const task of missingTasks) {
-    const reassigned = tryReassignWithinDay(task, employeeStats);
-    if (!reassigned) {
-      const candidate = pickBestEmployeeForTask(employeeStats, task);
-      if (candidate) {
-        assignTask(employeeStats, candidate.employee.id, dayKey, task.assignmentId, "auto");
-      }
-    }
-  }
-
-  normalizeDayOverfill(dayKey, employeeStats);
-}
-
-function tryReassignWithinDay(task, employeeStats) {
-  const shiftId = task.shiftId;
-  const sameDayEmployees = state.employees
-    .map((employee) => ({ employee, cell: getScheduleCell(employee.id, task.dayKey) }))
-    .filter(({ cell }) => cell.assignmentId !== ASSIGNMENT_FREE && cell.assignmentId !== ASSIGNMENT_CLOSED)
-    .filter(({ employee }) => !getScheduleCell(employee.id, task.dayKey).locked);
-
-  const candidates = sameDayEmployees
-    .filter(({ employee, cell }) => getShiftIdFromAssignmentId(cell.assignmentId) !== shiftId)
-    .map(({ employee, cell }) => ({
-      employee,
-      cell,
-      score: reschedulePreferenceScore(employee, shiftId),
-    }))
-    .sort((left, right) => right.score - left.score);
-
-  for (const candidate of candidates) {
-    const originalTask = {
-      dayKey: task.dayKey,
-      assignmentId: candidate.cell.assignmentId,
-      shiftId: getShiftIdFromAssignmentId(candidate.cell.assignmentId),
-      hours: getHoursForAssignmentId(candidate.cell.assignmentId),
-    };
-
-    const stat = employeeStats.find((entry) => entry.employee.id === candidate.employee.id);
-    if (!stat) continue;
-    if (!canEmployeeSwapToTask(stat, originalTask, task)) continue;
-
-    assignTask(employeeStats, candidate.employee.id, task.dayKey, task.assignmentId, "auto");
-    const backfillSuccess = backfillShiftFromOtherEmployees(originalTask, employeeStats, [
-      candidate.employee.id,
-    ]);
-    if (backfillSuccess) {
-      return true;
-    }
-
-    assignTask(employeeStats, candidate.employee.id, task.dayKey, originalTask.assignmentId, "auto");
-  }
-
-  return false;
-}
-
-function backfillShiftFromOtherEmployees(task, employeeStats, excludedEmployeeIds = []) {
-  const candidates = state.employees
-    .filter((employee) => !excludedEmployeeIds.includes(employee.id))
-    .filter((employee) => isEmployeeAvailable(employee.id, task.dayKey))
-    .filter((employee) => !hasAssignment(employee.id, task.dayKey))
-    .map((employee) => {
-      const stat = employeeStats.find((entry) => entry.employee.id === employee.id);
-      return {
-        employee,
-        stat,
-        score: stat ? reschedulePreferenceScore(employee, task.shiftId) : -1,
-      };
-    })
-    .filter((candidate) => {
-      if (!candidate.stat) return false;
-      return !isReservedForPreferredShift(employeeStats, candidate.stat, task);
-    })
-    .filter((candidate) => candidate.stat && canEmployeeTakeTask(candidate.stat, task))
-    .sort((left, right) => right.score - left.score);
-
-  const best = candidates[0];
-  if (!best) return false;
-
-  assignTask(employeeStats, best.employee.id, task.dayKey, task.assignmentId, "auto");
-  return true;
-}
-
-function reschedulePreferenceScore(employee, targetShiftId) {
-  let score = 0;
-  if (employee.preferredShiftId === targetShiftId) {
-    score += 100 + employee.planningPriority * 15;
-  } else if (!employee.preferredShiftId) {
-    score += 70;
-  } else {
-    score += 30;
-  }
-  score += Math.random() * 3;
-  return score;
-}
-
-function normalizeDayOverfill(dayKey, employeeStats) {
-  for (const shift of state.shifts) {
-    const required = getDemandValue(dayKey, shift.id);
-    let assignedEmployees = state.employees.filter((employee) => {
-      const cell = getScheduleCell(employee.id, dayKey);
-      return getShiftIdFromAssignmentId(cell.assignmentId) === shift.id;
-    });
-
-    while (assignedEmployees.length > required) {
-      const removable = assignedEmployees
-        .filter((employee) => !getScheduleCell(employee.id, dayKey).locked)
-        .sort((left, right) => {
-          const leftScore = overfillRemovalScore(left, shift.id);
-          const rightScore = overfillRemovalScore(right, shift.id);
-          return leftScore - rightScore;
-        })[0];
-
-      if (!removable) break;
-
-      const stat = employeeStats.find((entry) => entry.employee.id === removable.id);
-      const cell = getScheduleCell(removable.id, dayKey);
-      if (stat) {
-        stat.assignedHours = roundToHalfHour(
-          stat.assignedHours - getHoursForAssignmentId(cell.assignmentId),
-        );
-      }
-      state.schedule[removable.id][dayKey] = createEmptyCell();
-      assignedEmployees = state.employees.filter((employee) => {
-        const nextCell = getScheduleCell(employee.id, dayKey);
-        return getShiftIdFromAssignmentId(nextCell.assignmentId) === shift.id;
-      });
-    }
-  }
-}
-
-function overfillRemovalScore(employee, shiftId) {
-  let score = 0;
-  if (employee.preferredShiftId === shiftId) {
-    score += 100;
-  } else if (!employee.preferredShiftId) {
-    score += 60;
-  } else {
-    score += 10;
-  }
-  score += employee.planningPriority * 20;
-  return score;
-}
-
-function updateSummaryAndMessages(employeeStats, tasks, staticMessages, planningDays) {
-  const coverage = buildCoverageMap(planningDays);
-  const coverageStats = summarizeCoverage(coverage, planningDays);
-  const assignedHours = state.employees.reduce(
-    (sum, employee) => sum + getAssignedHoursForEmployee(employee.id),
-    0,
-  );
-  const targetHours = tasks.reduce((sum, task) => sum + task.hours, 0);
-  const lockedAssignments = countLockedAssignments();
-
-  state.coverage = coverage;
-  state.summary = {
-    assignedHours: roundToHalfHour(assignedHours),
-    targetHours: roundToHalfHour(targetHours),
-    coverageRate: coverageStats.coverageRate,
-    lockedAssignments,
-  };
-
-  const dynamicMessages = [];
-
-  for (const employee of state.employees) {
-    const assigned = getAssignedHoursForEmployee(employee.id);
-    const delta = roundToHalfHour(assigned - employee.weeklyHours);
-    if (delta > 0) {
-      dynamicMessages.push({
-        level: employee.overtimePriority === 0 ? "error" : "warn",
-        text: `${employee.name} liegt ${formatHours(delta)} h über den verfügbaren Wochenstunden.`,
-      });
-    } else if (delta < -4) {
-      dynamicMessages.push({
-        level: "info",
-        text: `${employee.name} liegt ${formatHours(Math.abs(delta))} h unter den verfügbaren Wochenstunden.`,
-      });
-    }
-  }
-
-  for (const dayKey of planningDays) {
-    for (const shift of state.shifts) {
-      const item = coverage[dayKey]?.[shift.id];
-      if (!item) continue;
-      if (item.assigned < item.required) {
-        dynamicMessages.push({
-          level: "error",
-          text: `${findDayLabel(dayKey)}: ${shift.name} ist mit ${item.assigned}/${item.required} unterbesetzt.`,
-        });
-      } else if (item.assigned > item.required) {
-        dynamicMessages.push({
-          level: "warn",
-          text: `${findDayLabel(dayKey)}: ${shift.name} ist mit ${item.assigned}/${item.required} überplant.`,
-        });
-      }
-    }
-  }
-
-  if (staticMessages.length === 0 && dynamicMessages.length === 0) {
-    dynamicMessages.push({
-      level: "info",
-      text: "Der Dienstplan ist ohne erkennbare Regelverletzung erzeugt worden.",
-    });
-  }
-
-  state.statusMessages = [...staticMessages, ...dynamicMessages];
-}
-
 function validateAndReportStaticState() {
   state.statusMessages = validateStaticConfig();
   renderStatusMessages();
-}
-
-function validateStaticConfig() {
-  const messages = [];
-
-  for (const shift of state.shifts) {
-    const fullMinutes = diffMinutes(shift.start, shift.end);
-    const coreMinutes = diffMinutes(shift.coreStart, shift.coreEnd);
-
-    if (fullMinutes <= 30) {
-      messages.push({
-        level: "error",
-        text: `${shift.name}: Die Schichtdauer muss länger als 30 Minuten sein.`,
-      });
-    }
-
-    if (coreMinutes <= 30) {
-      messages.push({
-        level: "error",
-        text: `${shift.name}: Die Kernzeit muss länger als 30 Minuten sein.`,
-      });
-    }
-
-    if (!isCoreInsideShift(shift)) {
-      messages.push({
-        level: "error",
-        text: `${shift.name}: Die Kernzeit muss innerhalb der Schicht liegen.`,
-      });
-    }
-  }
-
-  const duplicateNames = findDuplicates(
-    state.employees.map((employee) => employee.name.trim()).filter(Boolean),
-  );
-  if (duplicateNames.length > 0) {
-    messages.push({
-      level: "warn",
-      text: `Doppelte Mitarbeitenden-Namen erkannt: ${duplicateNames.join(", ")}.`,
-    });
-  }
-
-  if (state.shifts.length === 0) {
-    messages.push({
-      level: "error",
-      text: "Mindestens eine Schicht ist erforderlich.",
-    });
-  }
-
-  if (state.employees.length === 0) {
-    messages.push({
-      level: "error",
-      text: "Mindestens eine mitarbeitende Person ist erforderlich.",
-    });
-  }
-
-  return messages;
 }
 
 function buildCoverageMap(planningDays) {
@@ -1660,9 +1080,6 @@ function buildEmptySummary() {
 }
 
 function getPlanningDays() {
-  if (state.mode === MODE_DAY) {
-    return [state.selectedDay];
-  }
   return DAYS.filter((day) => state.activeDays[day.key]).map((day) => day.key);
 }
 
@@ -1713,6 +1130,7 @@ function resetManualAddState() {
   clearManualAddFeedback();
 }
 
+//?????????????????????
 function getScheduleCell(employeeId, dayKey) {
   if (!state.schedule[employeeId]) {
     state.schedule[employeeId] = {};
@@ -1833,77 +1251,6 @@ function isEmployeeAvailable(employeeId, dayKey) {
   return getPlanningDays().includes(dayKey);
 }
 
-function isReservedForPreferredShift(employeeStats, entry, task) {
-  const preferredShiftId = entry.employee.preferredShiftId;
-  if (!preferredShiftId) return false;
-  if (preferredShiftId === task.shiftId) return false;
-
-  const preferredTask = createTaskForShift(task.dayKey, preferredShiftId);
-  if (!preferredTask) return false;
-
-  const remainingDemand =
-    getDemandValue(task.dayKey, preferredShiftId) -
-    countAssignments(task.dayKey, preferredShiftId);
-
-  if (remainingDemand <= 0) return false;
-  if (!canEmployeeTakeTask(entry, preferredTask)) return false;
-
-  const preferredCandidates = employeeStats
-    .filter((candidate) => candidate.employee.preferredShiftId === preferredShiftId)
-    .filter((candidate) => isEmployeeAvailable(candidate.employee.id, task.dayKey))
-    .filter((candidate) => !hasAssignment(candidate.employee.id, task.dayKey))
-    .filter((candidate) => canEmployeeTakeTask(candidate, preferredTask))
-    .sort(comparePreferredReservationCandidates);
-
-  const reservedCandidates = preferredCandidates
-    .slice(0, remainingDemand)
-    .map((candidate) => candidate.employee.id);
-
-  return reservedCandidates.includes(entry.employee.id);
-}
-
-function createTaskForShift(dayKey, shiftId) {
-  const shift = state.shifts.find((entry) => entry.id === shiftId);
-  if (!shift) return null;
-
-  const assignmentId = shouldUseCoreVariant(shift)
-    ? `${shift.id}::core`
-    : `${shift.id}::full`;
-
-  return {
-    dayKey,
-    shiftId: shift.id,
-    assignmentId,
-    variant: resolveVariantFromAssignmentId(assignmentId),
-    hours: getHoursForAssignmentId(assignmentId),
-  };
-}
-
-function comparePreferredReservationCandidates(left, right) {
-  const priorityDiff =
-    right.employee.planningPriority - left.employee.planningPriority;
-  if (priorityDiff !== 0) return priorityDiff;
-
-  const remainingLeft = roundToHalfHour(
-    left.allowedHours + left.overtimeCapacity - left.assignedHours,
-  );
-  const remainingRight = roundToHalfHour(
-    right.allowedHours + right.overtimeCapacity - right.assignedHours,
-  );
-  if (remainingRight !== remainingLeft) {
-    return remainingRight - remainingLeft;
-  }
-
-  return left.employee.name.localeCompare(right.employee.name);
-}
-
-function canEmployeeSwapToTask(entry, originalTask, nextTask) {
-  const nextHours = roundToHalfHour(
-    entry.assignedHours - originalTask.hours + nextTask.hours,
-  );
-  return nextHours <= roundToHalfHour(entry.allowedHours + entry.overtimeCapacity);
-}
-
 function findLockedOwnerForTask(dayKey, assignmentId) {
   return state.employees.find((employee) => {
     const cell = getScheduleCell(employee.id, dayKey);
@@ -1995,7 +1342,7 @@ function findDuplicates(items) {
   return [...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name);
 }
 
-// V2 scheduling engine overrides legacy scheduling functions above.
+// V2 scheduling engine.
 function generateSchedule(options = {}) {
   const { preserveManualLocks = true } = options;
   ensureDemandShape();

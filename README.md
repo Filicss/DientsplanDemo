@@ -10,7 +10,8 @@ Der aktuelle Stand soll zeigen:
 - eine editierbare Konfiguration fuer Schichten, Bedarfe und Mitarbeitende
 - automatische Erzeugung eines Wochenplans
 - manuelle Eingriffe durch die Filialleitung
-- automatische Neuplanung nach manuellen Aenderungen
+- automatische Neuplanung nach Raster-Aenderungen
+- gezielte manuelle Zusatzschichten ohne Neuplanung
 
 Alle sichtbaren Inhalte der Anwendung bleiben auf Deutsch.
 
@@ -30,7 +31,6 @@ Die Daten leben im Frontend-Zustand und koennen als JSON importiert oder exporti
 ### 3. Aktueller Funktionsumfang
 
 #### Planungsmodus
-- `Tagesplanung` fuer genau einen ausgewaehlten Tag
 - `Wochenplanung` fuer Montag bis Samstag
 - Sonntag ist immer ausgeschlossen
 - einzelne Tage koennen in der Wochenplanung deaktiviert werden, z. B. fuer Feiertage
@@ -59,12 +59,18 @@ Die Daten leben im Frontend-Zustand und koennen als JSON importiert oder exporti
 
 #### Manuelle Aenderung
 - jede Zelle im Dienstplan ist manuell editierbar
-- manuelle Aenderungen werden gesperrt
-- nach einer Aenderung wird der Rest des Plans neu berechnet
+- direkte Raster-Aenderungen werden gesperrt
+- direkte Raster-Aenderungen berechnen den Rest des Plans neu
+- unter dem Dienstplan gibt es ein separates Panel fuer manuelle Zusatzschichten
+- dieses Panel darf nur auf Zellen mit `frei` schreiben
+- Zusatzschichten koennen als `voll` oder `Kernzeit` gesetzt werden
+- Zusatzschichten erscheinen sofort im Dienstplan sowie in `Bedarf gegen Ist`
+- Zusatzschichten loesen keine Neuplanung des restlichen Wochenplans aus
 - manuell auf `frei` gesetzte Felder bleiben respektiert
 
 #### Datenexport
 - Import / Export als JSON
+- manuelle Zusatzschichten bleiben im JSON erhalten, weil sie direkt in `state.schedule` gespeichert werden
 
 ### 4. V2 Scheduling Engine
 Die aktuelle Version verwendet nicht mehr den alten einfachen Wochenreihenfolge-Greedy-Planer.
@@ -107,7 +113,8 @@ Im Vergleich zur ersten Version wurden bereits verbessert:
 - `Früh` / `Spät` werden als kritische Schichten priorisiert
 - `Mittel` ist nachgelagert
 - `Kernzeit` wird nicht mehr pauschal auf beliebige Mitarbeitende angewandt
-- manuelle Aenderungen laufen ueber dieselbe V2-Logik wie die automatische Planung
+- direkte Raster-Aenderungen laufen ueber dieselbe V2-Logik wie die automatische Planung
+- manuelle Zusatzschichten koennen jetzt bewusst ausserhalb der Neuplanung gesetzt werden
 - typische Fehlbilder wie komplett freie 20h-Mitarbeitende trotz offener kritischer Bedarfe wurden reduziert
 
 ### 6. Bekannte Grenzen
@@ -156,7 +163,8 @@ Es ist aktuell kein Build-Schritt erforderlich.
 - 可编辑的班次、需求和员工配置
 - 自动生成周排班
 - 店长手动干预
-- 手动改班后的自动重新排班
+- 在排班表内手动改班后的自动重新排班
+- 在独立补班面板中追加班次且不重排
 
 应用里用户能看到的内容仍然全部使用德语。
 
@@ -176,7 +184,6 @@ Es ist aktuell kein Build-Schritt erforderlich.
 ### 3. 当前功能
 
 #### 排班模式
-- `Tagesplanung`：只对一个选中的工作日生成排班
 - `Wochenplanung`：对周一到周六生成排班
 - 周日始终不排班
 - 周模式下可以关闭某些天，例如模拟节假日
@@ -205,12 +212,18 @@ Es ist aktuell kein Build-Schritt erforderlich.
 
 #### 手动改班
 - 排班表中每个单元格都可手动修改
-- 手动修改后单元格会锁定
-- 系统会基于锁定结果重新计算其余排班
+- 直接在排班表内修改后，单元格会锁定
+- 直接在排班表内修改后，系统会基于锁定结果重新计算其余排班
+- 在 `Automatisch erzeugter Dienstplan` 下方还有一个独立的手动补班区域
+- 该区域只允许给当前为 `frei` 的格子补班
+- 补班可以直接选择 `voll` 或 `Kernzeit`
+- 补班后会立刻同步到上方排班表和下方 `Bedarf gegen Ist`
+- 这类补班不会触发整周重新排班
 - 手动设置为 `frei` 的格子不会被自动覆盖
 
 #### 数据导出
 - 支持 JSON 导入导出
+- 手动补班结果也会跟随 JSON 一起保存和恢复
 
 ### 4. 当前 V2 排班引擎
 当前版本已经不再使用最初那个“按周一到周六顺序排、逐任务贪心”的旧引擎。
@@ -253,7 +266,8 @@ Es ist aktuell kein Build-Schritt erforderlich.
 - `Früh` / `Spät` 被当作关键班次优先保障
 - `Mittel` 被放到后处理
 - `Kernzeit` 不再随意套用到任意员工
-- 手动改班后的重平衡已经切到同一套 V2 引擎
+- 表格内手动改班后的重平衡已经切到同一套 V2 引擎
+- 另外新增了“不重排的手动补班入口”，用于现实场景下的小范围微调
 - 像“20h 员工整周全 frei，但关键需求还没满足”这种明显错误已经被显著削弱
 
 ### 6. 当前已知局限
