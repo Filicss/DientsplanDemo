@@ -41,6 +41,7 @@ const state = {
 };
 
 const refs = {
+  heroActions: document.querySelector(".hero-actions"),
   modeControls: document.querySelector("#modeControls"),
   shiftTableBody: document.querySelector("#shiftTableBody"),
   demandTableBody: document.querySelector("#demandTableBody"),
@@ -56,6 +57,7 @@ const refs = {
   manualAddButton: document.querySelector("#manualAddButton"),
   manualAddFeedback: document.querySelector("#manualAddFeedback"),
   generateButton: document.querySelector("#generateButton"),
+  resultSecondaryActionsMount: document.querySelector("#resultSecondaryActionsMount"),
   resetLocksButton: document.querySelector("#resetLocksButton"),
   loadSampleButton: document.querySelector("#loadSampleButton"),
   exportButton: document.querySelector("#exportButton"),
@@ -69,9 +71,19 @@ const refs = {
 boot();
 
 function boot() {
+  mountResultActions();
   bindActions();
   renderAll();
   generateSchedule();
+}
+
+function mountResultActions() {
+  if (!refs.heroActions || !refs.resultSecondaryActionsMount) {
+    return;
+  }
+
+  refs.heroActions.classList.add("result-secondary-actions");
+  refs.resultSecondaryActionsMount.appendChild(refs.heroActions);
 }
 
 function bindActions() {

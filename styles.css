@@ -112,6 +112,30 @@ body::before {
   flex-shrink: 0;
 }
 
+.result-toolbar {
+  display: flex;
+  flex: 1 1 560px;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#resultSecondaryActionsMount {
+  display: flex;
+  flex: 1 1 440px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.result-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-content: flex-start;
+  justify-content: flex-end;
+}
+
 button,
 input,
 select {
@@ -569,7 +593,10 @@ select:focus {
 
   .hero-actions,
   .table-actions,
-  .result-actions {
+  .result-actions,
+  .result-toolbar,
+  #resultSecondaryActionsMount,
+  .result-secondary-actions {
     justify-content: flex-start;
   }
 
