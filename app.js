@@ -32,6 +32,12 @@ const state = {
   summary: {},
   coverage: {},
   generationRevision: 0,
+  manualAddForm: {
+    employeeId: "",
+    dayKey: "",
+    assignmentId: "",
+  },
+  manualAddFeedback: null,
 };
 
 const refs = {
@@ -44,6 +50,11 @@ const refs = {
   summaryCards: document.querySelector("#summaryCards"),
   coverageTableBody: document.querySelector("#coverageTableBody"),
   statusList: document.querySelector("#statusList"),
+  manualAddEmployee: document.querySelector("#manualAddEmployee"),
+  manualAddDay: document.querySelector("#manualAddDay"),
+  manualAddAssignment: document.querySelector("#manualAddAssignment"),
+  manualAddButton: document.querySelector("#manualAddButton"),
+  manualAddFeedback: document.querySelector("#manualAddFeedback"),
   generateButton: document.querySelector("#generateButton"),
   resetLocksButton: document.querySelector("#resetLocksButton"),
   loadSampleButton: document.querySelector("#loadSampleButton"),
@@ -73,6 +84,10 @@ function bindActions() {
   refs.addShiftButton.addEventListener("click", addShift);
   refs.addEmployeeButton.addEventListener("click", addEmployee);
   refs.syncDemandButton.addEventListener("click", syncDemandToDefault);
+  refs.manualAddButton.addEventListener("click", onManualAddSubmit);
+  refs.manualAddEmployee.addEventListener("change", onManualAddFieldChange);
+  refs.manualAddDay.addEventListener("change", onManualAddFieldChange);
+  refs.manualAddAssignment.addEventListener("change", onManualAddFieldChange);
 }
 
 function createSampleData() {
@@ -248,6 +263,7 @@ function renderAll() {
   renderScheduleTable();
   renderSummaryCards();
   renderCoverageTable();
+  renderManualAddPanel();
   renderStatusMessages();
 }
 
@@ -319,6 +335,7 @@ function renderModeControls() {
       renderModeControls();
       renderDemandTable();
       renderScheduleTable();
+      renderManualAddPanel();
     });
   });
 }
@@ -583,6 +600,108 @@ function renderCoverageTable() {
     .join("");
 }
 
+function renderManualAddPanel() {
+  const employeeOptions = state.employees.map((employee) => ({
+    value: employee.id,
+    label: employee.name,
+  }));
+  const dayOptions = getPlanningDays().map((dayKey) => ({
+    value: dayKey,
+    label: findDayLabel(dayKey),
+  }));
+  const assignmentOptions = buildManualAddAssignmentOptions();
+
+  syncManualAddFormState(employeeOptions, dayOptions, assignmentOptions);
+
+  refs.manualAddEmployee.innerHTML = buildManualAddSelectMarkup(
+    employeeOptions,
+    state.manualAddForm.employeeId,
+    "Mitarbeitende auswählen",
+  );
+  refs.manualAddDay.innerHTML = buildManualAddSelectMarkup(
+    dayOptions,
+    state.manualAddForm.dayKey,
+    "Wochentag auswählen",
+  );
+  refs.manualAddAssignment.innerHTML = buildManualAddSelectMarkup(
+    assignmentOptions,
+    state.manualAddForm.assignmentId,
+    "Schicht auswählen",
+  );
+  refs.manualAddButton.disabled = !isManualAddFormReady();
+  renderManualAddFeedback();
+}
+
+function buildManualAddSelectMarkup(options, selectedValue, placeholder) {
+  const rows = [
+    {
+      value: "",
+      label: placeholder,
+    },
+    ...options,
+  ];
+
+  return rows
+    .map(
+      (option) => `
+        <option value="${escapeAttr(option.value)}" ${option.value === selectedValue ? "selected" : ""}>
+          ${escapeHtml(option.label)}
+        </option>
+      `,
+    )
+    .join("");
+}
+
+function buildManualAddAssignmentOptions() {
+  const seen = new Set();
+  const options = [];
+
+  for (const day of DAYS) {
+    for (const option of buildAssignmentOptionsForDay(day.key)) {
+      if (!option.value || option.value === ASSIGNMENT_FREE || option.value === ASSIGNMENT_CLOSED) {
+        continue;
+      }
+      if (seen.has(option.value)) continue;
+      seen.add(option.value);
+      options.push(option);
+    }
+  }
+
+  return options;
+}
+
+function syncManualAddFormState(employeeOptions, dayOptions, assignmentOptions) {
+  const ensureValue = (currentValue, options) => {
+    if (!options.length) return "";
+    if (options.some((option) => option.value === currentValue)) {
+      return currentValue;
+    }
+    return options[0].value;
+  };
+
+  state.manualAddForm.employeeId = ensureValue(
+    state.manualAddForm.employeeId,
+    employeeOptions,
+  );
+  state.manualAddForm.dayKey = ensureValue(state.manualAddForm.dayKey, dayOptions);
+  state.manualAddForm.assignmentId = ensureValue(
+    state.manualAddForm.assignmentId,
+    assignmentOptions,
+  );
+}
+
+function renderManualAddFeedback() {
+  const feedback = state.manualAddFeedback;
+  if (!feedback) {
+    refs.manualAddFeedback.className = "manual-add-feedback";
+    refs.manualAddFeedback.textContent = "";
+    return;
+  }
+
+  refs.manualAddFeedback.className = `manual-add-feedback is-${feedback.level}`;
+  refs.manualAddFeedback.textContent = feedback.text;
+}
+
 function renderStatusMessages() {
   const messages =
     state.statusMessages.length > 0
@@ -621,6 +740,7 @@ function onShiftFieldChange(event) {
 
   renderShiftTable();
   renderDemandTable();
+  renderManualAddPanel();
   validateAndReportStaticState();
 }
 
@@ -651,7 +771,16 @@ function onEmployeeFieldChange(event) {
   }
 
   renderEmployeeTable();
+  renderManualAddPanel();
   validateAndReportStaticState();
+}
+
+function onManualAddFieldChange(event) {
+  const field = event.target.dataset.manualAddField;
+  if (!field) return;
+  state.manualAddForm[field] = event.target.value;
+  clearManualAddFeedback();
+  renderManualAddPanel();
 }
 
 function onManualScheduleChange(event) {
@@ -666,6 +795,44 @@ function onManualScheduleChange(event) {
   cell.source = "manual";
 
   rebalanceAfterManualChange(employeeId, dayKey);
+}
+
+function onManualAddSubmit() {
+  if (!isManualAddFormReady()) {
+    setManualAddFeedback("error", "Bitte Name, Wochentag und Schicht vollständig auswählen.");
+    renderManualAddPanel();
+    return;
+  }
+
+  const { employeeId, dayKey, assignmentId } = state.manualAddForm;
+  const employee = state.employees.find((entry) => entry.id === employeeId);
+  const cell = getScheduleCell(employeeId, dayKey);
+
+  if (!employee) {
+    setManualAddFeedback("error", "Die ausgewählte Person konnte nicht gefunden werden.");
+    renderManualAddPanel();
+    return;
+  }
+
+  if (cell.assignmentId !== ASSIGNMENT_FREE) {
+    setManualAddFeedback(
+      "error",
+      `${employee.name} hat am ${findDayLabel(dayKey)} bereits eine Schicht. Manuelle Ergänzungen sind nur für frei erlaubt.`,
+    );
+    renderManualAddPanel();
+    return;
+  }
+
+  cell.assignmentId = assignmentId;
+  cell.variant = resolveVariantFromAssignmentId(assignmentId);
+  cell.locked = true;
+  cell.source = "manual";
+
+  setManualAddFeedback(
+    "success",
+    `${employee.name} wurde am ${findDayLabel(dayKey)} für ${findAssignmentLabel(assignmentId)} ergänzt.`,
+  );
+  refreshDerivedScheduleState();
 }
 
 function addShift() {
@@ -731,12 +898,14 @@ function addEmployee() {
       planningPriority: 1,
     }),
   );
+  clearManualAddFeedback();
   renderAll();
 }
 
 function removeEmployee(employeeId) {
   state.employees = state.employees.filter((employee) => employee.id !== employeeId);
   delete state.schedule[employeeId];
+  clearManualAddFeedback();
   renderAll();
 }
 
@@ -766,6 +935,7 @@ function loadSampleData() {
   state.statusMessages = [];
   state.summary = {};
   state.coverage = {};
+  resetManualAddState();
   renderAll();
   generateSchedule();
 }
@@ -834,6 +1004,7 @@ function hydrateState(payload) {
   state.demandOverrides = payload.demandOverrides || {};
   state.schedule = payload.schedule || {};
   ensureDemandShape();
+  state.manualAddFeedback = null;
 }
 
 function resetManualLocks() {
@@ -845,6 +1016,7 @@ function resetManualLocks() {
       }
     }
   }
+  clearManualAddFeedback();
   generateSchedule({ preserveManualLocks: false });
 }
 
@@ -1519,6 +1691,28 @@ function buildAssignmentOptionsForDay(dayKey) {
   return options;
 }
 
+function isManualAddFormReady() {
+  const { employeeId, dayKey, assignmentId } = state.manualAddForm;
+  return Boolean(employeeId && dayKey && assignmentId);
+}
+
+function setManualAddFeedback(level, text) {
+  state.manualAddFeedback = { level, text };
+}
+
+function clearManualAddFeedback() {
+  state.manualAddFeedback = null;
+}
+
+function resetManualAddState() {
+  state.manualAddForm = {
+    employeeId: "",
+    dayKey: "",
+    assignmentId: "",
+  };
+  clearManualAddFeedback();
+}
+
 function getScheduleCell(employeeId, dayKey) {
   if (!state.schedule[employeeId]) {
     state.schedule[employeeId] = {};
@@ -1770,6 +1964,16 @@ function cloneSchedule(schedule) {
   return JSON.parse(JSON.stringify(schedule || {}));
 }
 
+function findAssignmentLabel(assignmentId) {
+  for (const day of DAYS) {
+    const option = buildAssignmentOptionsForDay(day.key).find(
+      (entry) => entry.value === assignmentId,
+    );
+    if (option) return option.label;
+  }
+  return assignmentId;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1867,6 +2071,38 @@ function allocateOvertimeCapacity(employeeStats, missingHours) {
 
 function rebalanceAfterManualChange(employeeId, dayKey) {
   generateSchedule({ preserveManualLocks: true });
+}
+
+function refreshDerivedScheduleState() {
+  const planningDays = getPlanningDays();
+  const staticMessages = validateStaticConfig();
+
+  if (planningDays.length === 0) {
+    state.statusMessages = [
+      ...staticMessages,
+      {
+        level: "warn",
+        text: "Es ist kein Planungstag aktiv. Bitte mindestens einen Tag wählen.",
+      },
+    ];
+    state.summary = buildEmptySummary();
+    state.coverage = buildCoverageMap([]);
+    renderAll();
+    return;
+  }
+
+  if (hasBlockingMessages(staticMessages)) {
+    state.statusMessages = staticMessages;
+    state.summary = buildEmptySummary();
+    state.coverage = buildCoverageMap([]);
+    renderAll();
+    return;
+  }
+
+  const engine = createSchedulingEngineContext(planningDays);
+  const employeeStats = createEmployeeStats();
+  updateSummaryAndMessages(employeeStats, staticMessages, planningDays, engine);
+  renderAll();
 }
 
 function updateSummaryAndMessages(employeeStats, staticMessages, planningDays, engine) {

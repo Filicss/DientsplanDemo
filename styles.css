@@ -105,6 +105,13 @@ body::before {
   justify-content: flex-end;
 }
 
+.result-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
 button,
 input,
 select {
@@ -366,6 +373,66 @@ select:focus {
   font-size: 0.9rem;
 }
 
+.manual-add-panel {
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+
+.manual-add-layout {
+  display: grid;
+  gap: 10px;
+}
+
+.manual-add-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.9fr) minmax(220px, 1.2fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.manual-add-labels {
+  color: #594e42;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.manual-add-labels span {
+  padding: 0 2px;
+}
+
+.manual-add-action-spacer {
+  min-width: 132px;
+}
+
+.manual-add-controls select,
+.manual-add-controls button {
+  min-height: 44px;
+}
+
+.manual-add-controls button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.manual-add-feedback {
+  min-height: 24px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.manual-add-feedback.is-error {
+  color: var(--danger);
+}
+
+.manual-add-feedback.is-success {
+  color: var(--success);
+}
+
 .schedule-name-cell {
   min-width: 160px;
 }
@@ -501,12 +568,21 @@ select:focus {
   }
 
   .hero-actions,
-  .table-actions {
+  .table-actions,
+  .result-actions {
     justify-content: flex-start;
   }
 
   .mode-row {
     gap: 10px;
+  }
+
+  .manual-add-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-add-labels {
+    display: none;
   }
 }
 

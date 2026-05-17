@@ -18,9 +18,6 @@
           </p>
         </div>
         <div class="hero-actions">
-          <button class="primary-button" id="generateButton" type="button">
-            Dienstplan erzeugen
-          </button>
           <button class="secondary-button" id="resetLocksButton" type="button">
             Manuelle Sperren lösen
           </button>
@@ -172,9 +169,15 @@
               <p class="eyebrow">Ergebnis</p>
               <h2>Automatisch erzeugter Dienstplan</h2>
               <p class="section-copy">
-                Jede manuelle Änderung sperrt das Feld und startet eine
-                Neuberechnung für den restlichen Planungsraum.
+                Direkte Änderungen im Raster sperren das Feld und können den
+                restlichen Plan neu berechnen. Zusatzschichten unten werden
+                sofort ohne Neuplanung übernommen.
               </p>
+            </div>
+            <div class="result-actions">
+              <button class="primary-button" id="generateButton" type="button">
+                Dienstplan erzeugen
+              </button>
             </div>
           </div>
 
@@ -193,6 +196,43 @@
               <tbody id="scheduleTableBody"></tbody>
             </table>
           </div>
+        </section>
+
+        <section class="panel manual-add-panel">
+          <div class="section-header compact">
+            <div>
+              <p class="eyebrow">Manuelle Ergänzung</p>
+              <h2>Zusatzschicht hinzufügen</h2>
+              <p class="section-copy">
+                Diese Funktion ergänzt eine freie Schicht im bestehenden Plan,
+                ohne den Rest der Woche neu zu erzeugen.
+              </p>
+            </div>
+          </div>
+
+          <div class="manual-add-layout">
+            <div class="manual-add-grid manual-add-labels" aria-hidden="true">
+              <span>Name</span>
+              <span>Wochentag</span>
+              <span>Schicht</span>
+              <span class="manual-add-action-spacer"></span>
+            </div>
+
+            <div class="manual-add-grid manual-add-controls">
+              <select id="manualAddEmployee" data-manual-add-field="employeeId"></select>
+              <select id="manualAddDay" data-manual-add-field="dayKey"></select>
+              <select id="manualAddAssignment" data-manual-add-field="assignmentId"></select>
+              <button class="primary-button" id="manualAddButton" type="button">
+                Hinzufügen
+              </button>
+            </div>
+          </div>
+
+          <div
+            id="manualAddFeedback"
+            class="manual-add-feedback"
+            aria-live="polite"
+          ></div>
         </section>
 
         <section class="panel two-column-panel">
