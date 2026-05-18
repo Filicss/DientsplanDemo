@@ -55,6 +55,7 @@ body::before {
 .hero {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 24px;
   padding: 28px;
   border: 1px solid rgba(255, 255, 255, 0.55);
@@ -64,6 +65,11 @@ body::before {
     linear-gradient(180deg, rgba(22, 99, 107, 0.04), rgba(183, 113, 21, 0.08));
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
+}
+
+.hero-intro {
+  flex: 1 1 520px;
+  min-width: 0;
 }
 
 .hero h1,
@@ -94,6 +100,58 @@ body::before {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
+}
+
+.hero-side {
+  display: grid;
+  justify-items: end;
+  gap: 14px;
+  flex: 0 1 420px;
+  min-width: min(100%, 320px);
+}
+
+.hero-repo-link {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 420px);
+  padding: 18px 20px;
+  border: 1px solid rgba(22, 99, 107, 0.16);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.84), rgba(247, 252, 252, 0.9)),
+    linear-gradient(180deg, rgba(22, 99, 107, 0.08), rgba(22, 99, 107, 0.02));
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: 0 12px 26px rgba(15, 78, 84, 0.08);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.hero-repo-link:hover {
+  transform: translateY(-2px);
+  border-color: rgba(22, 99, 107, 0.3);
+  box-shadow: 0 16px 30px rgba(15, 78, 84, 0.14);
+}
+
+.hero-repo-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.hero-repo-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.hero-repo-url {
+  color: var(--muted);
+  word-break: break-word;
 }
 
 .hero-actions,
@@ -593,12 +651,21 @@ select:focus {
   }
 
   .hero-actions,
+  .hero-side,
   .table-actions,
   .result-actions,
   .result-toolbar,
   #resultSecondaryActionsMount,
   .result-secondary-actions {
     justify-content: flex-start;
+  }
+
+  .hero-side {
+    justify-items: stretch;
+  }
+
+  .hero-repo-link {
+    width: 100%;
   }
 
   .mode-row {
@@ -624,6 +691,10 @@ select:focus {
   .panel {
     padding: 18px;
     border-radius: 22px;
+  }
+
+  .hero-side {
+    min-width: 0;
   }
 
   .day-chip {

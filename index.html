@@ -9,7 +9,7 @@
   <body>
     <div class="page-shell">
       <header class="hero">
-        <div>
+        <div class="hero-intro">
           <p class="eyebrow">Demo für Personalplanung</p>
           <h1>Dienstplaner Demo</h1>
           <p class="hero-copy">
@@ -17,7 +17,19 @@
             Überstunden-Prioritäten und manueller Nachsteuerung.
           </p>
         </div>
-        <div class="hero-actions">
+        <div class="hero-side">
+          <a
+            class="hero-repo-link"
+            href="https://github.com/Filicss/DientsplanDemo"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="GitHub Repository Filicss DientsplanDemo"
+          >
+            <span class="hero-repo-label">GitHub Repository</span>
+            <span class="hero-repo-name">Filicss/DientsplanDemo</span>
+            <span class="hero-repo-url">github.com/Filicss/DientsplanDemo</span>
+          </a>
+          <div class="hero-actions">
           <button class="secondary-button" id="resetLocksButton" type="button">
             Manuelle Sperren lösen
           </button>
@@ -30,7 +42,8 @@
           <button class="secondary-button" id="importButton" type="button">
             JSON importieren
           </button>
-          <input id="importFileInput" type="file" accept=".json" hidden />
+            <input id="importFileInput" type="file" accept=".json" hidden />
+          </div>
         </div>
       </header>
 
