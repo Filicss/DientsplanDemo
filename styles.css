@@ -555,9 +555,10 @@ select:focus {
 }
 
 .status-item.error {
-  background: var(--danger-soft);
-  border-color: rgba(166, 58, 45, 0.18);
-  color: #6d2018;
+  background: rgba(166, 58, 45, 0.22);
+  border-color: rgba(166, 58, 45, 0.34);
+  color: #57130d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .status-item.warn {

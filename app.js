@@ -1517,7 +1517,7 @@ function updateSummaryAndMessages(employeeStats, staticMessages, planningDays, e
           continue;
         }
         dynamicMessages.push({
-          level: role === "middle" ? "info" : "error",
+          level: "error",
           text: `${findDayLabel(dayKey)}: ${shift.name} ist mit ${item.assigned}/${item.required} unterbesetzt.`,
         });
       } else if (item.assigned > item.required) {
