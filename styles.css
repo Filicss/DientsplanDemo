@@ -58,7 +58,7 @@ body::before {
 
 .side-nav {
   position: fixed;
-  left: 18px;
+  left: 0px;
   top: 50%;
   z-index: 20;
   display: grid;
